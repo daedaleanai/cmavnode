@@ -10,8 +10,9 @@
 serial::serial(const std::string& port,
                const std::string& baudrate,
                bool flowcontrol,
-               link_info info_):
-    io_service_(), port_(io_service_), mlink(info_)
+               link_info info_,
+               queue<std::pair<mlink*, mavlink_message_t>>* qMavIn):
+    io_service_(), port_(io_service_), mlink(info_, qMavIn)
 {
 
 
@@ -51,7 +52,7 @@ serial::serial(const std::string& port,
     {
         std::cerr << "Error opening Serial Port: " << port << " " << error.what() << std::endl;
         std::cerr << "Link: " << info.link_name << " failed to initialise and is dead" << std::endl;
-        exitFlag = true;
+        qMavOut.shut_down();
     }
 
     //Start the read and write threads
@@ -74,7 +75,7 @@ serial::~serial()
     read_thread.join();
 
     //force write thread to return then join thread
-    exitFlag = true;
+    qMavOut.shut_down();
     write_thread.join();
 
     //Debind
@@ -183,14 +184,9 @@ void serial::runWriteThread()
     mavlink_message_t tmpMsg;
 
     //thread loop
-    while(!exitFlag)
+    while(qMavOut.pop(&tmpMsg))
     {
-        while(qMavOut.pop(tmpMsg))
-        {
-            out_counter.decrement();
-            processAndSend(&tmpMsg);
-        }
-        //queue is empty sleep the write thread
-        boost::this_thread::sleep(boost::posix_time::milliseconds(OUT_QUEUE_EMPTY_SLEEP));
+        out_counter.decrement();
+        processAndSend(&tmpMsg);
     }
 }

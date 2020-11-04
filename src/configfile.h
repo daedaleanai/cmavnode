@@ -30,7 +30,7 @@ public:
 };
 
 void readLinkInfo(ConfigFile* _configFile, std::string thisSection, link_info* _info);
-int readConfigFile(std::string &filename, std::vector<std::shared_ptr<mlink> > &links);
+int readConfigFile(std::string &filename, std::vector<std::shared_ptr<mlink> > &links, queue<std::pair<mlink*, mavlink_message_t>>* qMavIn);
 
 enum UDP_type {UDP_TYPE_NONE, UDP_TYPE_FULLY_SPECIFIED, UDP_TYPE_SERVER, UDP_TYPE_CLIENT, UDP_TYPE_BROADCAST};
 

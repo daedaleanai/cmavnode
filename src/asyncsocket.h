@@ -24,25 +24,29 @@ public:
         const std::string& host,
         const std::string& hostport,
         const std::string& listenport,
-        link_info info_);
+        link_info info_,
+        queue<std::pair<mlink*, mavlink_message_t>>* qMavIn);
 
     //Specify only receive
     asyncsocket(
         const std::string& listenport,
-        link_info info_);
+        link_info info_,
+        queue<std::pair<mlink*, mavlink_message_t>>* qMavIn);
 
     //bcast
     asyncsocket(bool bcastlock,
                 const std::string& bindaddress,
                 const std::string& bcastaddress,
                 const std::string& bcastport,
-                link_info info_);
+                link_info info_,
+                queue<std::pair<mlink*, mavlink_message_t>>* qMavIn);
 
     //Specify only target
     asyncsocket(
         const std::string& host,
         const std::string& hostport,
-        link_info info_);
+        link_info info_,
+        queue<std::pair<mlink*, mavlink_message_t>>* qMavIn);
 
     ~asyncsocket();
 

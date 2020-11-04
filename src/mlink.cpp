@@ -14,7 +14,7 @@ std::vector<boost::posix_time::time_duration> mlink::static_link_delay;
 std::mutex mlink::recently_received_mutex;
 std::set<uint8_t> mlink::sysIDs_all_links;
 
-mlink::mlink(link_info info_)
+mlink::mlink(link_info info_, queue<std::pair<mlink*, mavlink_message_t>>* qMavIn): qMavIn(qMavIn)
 {
     info = info_;
     static_link_delay.push_back(boost::posix_time::time_duration(0,0,0,0));
@@ -27,7 +27,7 @@ void mlink::qAddOutgoing(mavlink_message_t msg)
 {
     if(!is_kill)
     {
-        if(qMavOut.push(msg))
+        if(qMavOut.try_push(std::move(msg)))
         {
             out_counter.increment();
             totalPacketSent++;
@@ -37,18 +37,6 @@ void mlink::qAddOutgoing(mavlink_message_t msg)
                 std::cout << "MLINK: The outgoing queue is full" << std::endl;
         }
     }
-}
-
-bool mlink::qReadIncoming(mavlink_message_t *msg)
-{
-    //Will return true if a message was returned by refference
-    //false if the incoming queue is empty
-    if(qMavIn.pop(*msg))
-    {
-        in_counter.decrement();
-        return true;
-    }
-    else return false;
 }
 
 bool mlink::seenSysID(const uint8_t sysid) const
@@ -91,7 +79,7 @@ void mlink::onMessageRecv(mavlink_message_t *msg)
     }
 
     //We have made it this far, no reason to drop packet so add to queue
-    if(qMavIn.push(*msg))
+    if(qMavIn->try_push(std::make_pair(this, *msg)))
     {
         in_counter.increment();
     }
