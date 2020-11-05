@@ -11,6 +11,8 @@
 #include <boost/bind.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <string>
+#include <list>
+#include <chrono>
 
 #include "mlink.h"
 
@@ -61,6 +63,14 @@ private:
     boost::asio::ip::udp::socket socket_;
     boost::asio::ip::udp::endpoint endpoint_;
 
+    struct Client {
+        boost::asio::ip::udp::endpoint endpoint;
+        std::chrono::time_point<std::chrono::steady_clock> lastSignOfLife;
+    };
+
+    std::list<Client> clients_; // only used in server mode, contains all currently active clients
+
+    const bool isServer = false;
     bool endpointlock = true;
 
     //takes message, puts onto buff and calls send

@@ -59,7 +59,8 @@ asyncsocket::asyncsocket(
 asyncsocket::asyncsocket(
     const std::string& listenport,
     link_info info_) : io_service_(), mlink(info_),
-    socket_(io_service_, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), std::stoi(listenport)))
+    socket_(io_service_, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), std::stoi(listenport))),
+    isServer(true)
 {
     //Start the read and write threads
     write_thread = boost::thread(&asyncsocket::runWriteThread, this);
@@ -110,11 +111,28 @@ asyncsocket::~asyncsocket()
 
 void asyncsocket::send(uint8_t *buf, std::size_t buf_size)
 {
-    socket_.async_send_to(
-        boost::asio::buffer(buf, buf_size), endpoint_,
-        boost::bind(&asyncsocket::handleSendTo, this,
-                    boost::asio::placeholders::error,
-                    boost::asio::placeholders::bytes_transferred));
+    if (isServer) {
+        const std::chrono::time_point<std::chrono::steady_clock> now = std::chrono::steady_clock::now();
+        for (std::list<Client>::iterator iter = clients_.begin(); iter != clients_.end(); ) {
+            if (now - iter->lastSignOfLife > std::chrono::seconds(30)) {
+                iter = clients_.erase(iter);
+            } else {
+                socket_.async_send_to(
+                    boost::asio::buffer(buf, buf_size), iter->endpoint,
+                    boost::bind(&asyncsocket::handleSendTo, this,
+                                boost::asio::placeholders::error,
+                                boost::asio::placeholders::bytes_transferred));
+
+                ++iter;
+            }
+        }
+    } else {
+        socket_.async_send_to(
+            boost::asio::buffer(buf, buf_size), endpoint_,
+            boost::bind(&asyncsocket::handleSendTo, this,
+                        boost::asio::placeholders::error,
+                        boost::asio::placeholders::bytes_transferred));
+    }
 }
 
 void asyncsocket::receive()
@@ -159,6 +177,15 @@ void asyncsocket::handleReceiveFrom(const boost::system::error_code& error,
 {
     if (!error && bytes_recvd > 0)
     {
+        if (isServer) {
+            const std::list<Client>::iterator iter = std::find_if(clients_.begin(), clients_.end(), [this](const Client& c) { return c.endpoint == endpoint_; });
+            if (iter == clients_.end()) {
+                clients_.push_back(Client{endpoint_, std::chrono::steady_clock::now()});
+            } else {
+                iter->lastSignOfLife = std::chrono::steady_clock::now();
+            }
+        }
+
         //message received
         //do something
         mavlink_message_t msg;
