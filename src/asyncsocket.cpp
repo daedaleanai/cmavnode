@@ -12,7 +12,8 @@ asyncsocket::asyncsocket(
     const std::string& host,
     const std::string& hostport,
     const std::string& listenport,
-    link_info info_) : io_service_(), mlink(info_),
+    link_info info_,
+    queue<std::pair<mlink*, mavlink_message_t>>* qMavIn) : io_service_(), mlink(info_, qMavIn),
     socket_(io_service_, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), std::stoi(listenport)))
 {
 
@@ -36,7 +37,8 @@ asyncsocket::asyncsocket(
 asyncsocket::asyncsocket(
     const std::string& host,
     const std::string& hostport,
-    link_info info_) : io_service_(), mlink(info_),
+    link_info info_,
+    queue<std::pair<mlink*, mavlink_message_t>>* qMavIn) : io_service_(), mlink(info_, qMavIn),
     socket_(io_service_, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 0))
 {
 
@@ -58,7 +60,8 @@ asyncsocket::asyncsocket(
 // Server constructor
 asyncsocket::asyncsocket(
     const std::string& listenport,
-    link_info info_) : io_service_(), mlink(info_),
+    link_info info_,
+    queue<std::pair<mlink*, mavlink_message_t>>* qMavIn) : io_service_(), mlink(info_, qMavIn),
     socket_(io_service_, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), std::stoi(listenport))),
     isServer(true)
 {
@@ -76,7 +79,8 @@ asyncsocket::asyncsocket(bool bcastlock,
                          const std::string& bindaddress,
                          const std::string& bcastaddress,
                          const std::string& bcastport,
-                         link_info info_) : io_service_(), mlink(info_),
+                         link_info info_,
+                         queue<std::pair<mlink*, mavlink_message_t>>* qMavIn) : io_service_(), mlink(info_, qMavIn),
     socket_(io_service_, boost::asio::ip::udp::endpoint(boost::asio::ip::address::from_string(bindaddress), 0))
 {
     socket_.set_option(boost::asio::ip::udp::socket::reuse_address(true));
@@ -102,7 +106,7 @@ asyncsocket::~asyncsocket()
     read_thread.join();
 
     //force write thread to return then join thread
-    exitFlag = true;
+    qMavOut.shut_down();
     write_thread.join();
 
     //Debind
@@ -238,13 +242,9 @@ void asyncsocket::runWriteThread()
     mavlink_message_t tmpMsg;
 
     // Thread loop
-    while (!exitFlag)
+    while (qMavOut.pop(&tmpMsg))
     {
-        while (qMavOut.pop(tmpMsg))
-        {
-            out_counter.decrement();
-            processAndSend(&tmpMsg);
-        }
-        boost::this_thread::sleep(boost::posix_time::milliseconds(OUT_QUEUE_EMPTY_SLEEP));
+        out_counter.decrement();
+        processAndSend(&tmpMsg);
     }
 }

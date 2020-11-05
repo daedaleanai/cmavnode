@@ -22,7 +22,8 @@ public:
     serial(const std::string& port,
            const std::string& baudrate,
            bool flowcontrol,
-           link_info info_);
+           link_info info_,
+           queue<std::pair<mlink*, mavlink_message_t>>* qMavIn);
     ~serial();
 
     //override virtuals from mlink

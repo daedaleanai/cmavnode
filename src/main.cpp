@@ -20,13 +20,10 @@
 #include "shell.h"
 #include "configfile.h"
 
-//Periodic function timings
-#define MAIN_LOOP_SLEEP_QUEUE_EMPTY_MS 10
-
 // Functions in this file
 boost::program_options::options_description add_program_options(std::string &filename, bool &shellen, bool &verbose);
 int try_user_options(int argc, char** argv, boost::program_options::options_description desc);
-void runMainLoop(std::vector<std::shared_ptr<mlink> > *links, bool &verbose);
+void runMainLoop(std::vector<std::shared_ptr<mlink> > *links, queue<std::pair<mlink*, mavlink_message_t>>* qMavIn, bool &verbose);
 void printLinkStats(std::vector<std::shared_ptr<mlink> > *links);
 void printLinkQuality(std::vector<std::shared_ptr<mlink> > *links);
 void getTargets(const mavlink_message_t* msg, int16_t &sysid, int16_t &compid);
@@ -52,7 +49,8 @@ int main(int argc, char** argv)
     else if (ret == -1)
         return 0; // Help option
 
-    ret = readConfigFile(filename, links);
+    queue<std::pair<mlink*, mavlink_message_t>> qMavIn{MAV_INCOMING_LENGTH};
+    ret = readConfigFile(filename, links, &qMavIn);
     if (links.size() == 0)
     {
         std::cout << "No Valid Links found" << std::endl;
@@ -79,7 +77,7 @@ int main(int argc, char** argv)
     // Start the main loop
     while (!exitMainLoop)
     {
-        runMainLoop(&links, verbose);
+        runMainLoop(&links, &qMavIn, verbose);
     }
 
     // Once the main loop is done, rejoin the shell thread
@@ -149,17 +147,17 @@ int try_user_options(int argc, char** argv, boost::program_options::options_desc
 
 }
 
-bool should_forward_message(mavlink_message_t &msg, std::shared_ptr<mlink> *incoming_link, std::shared_ptr<mlink> *outgoing_link)
+bool should_forward_message(const mavlink_message_t &msg, mlink *incoming_link, std::shared_ptr<mlink> *outgoing_link)
 {
 
     // If the packet came from this link, don't bother
-    if (outgoing_link == incoming_link)
+    if (outgoing_link->get() == incoming_link)
     {
         return false;
     }
 
     // Don't forward SiK radio info
-    if ((*incoming_link)->info.SiK_radio && msg.sysid == 51)
+    if (incoming_link->info.SiK_radio && msg.sysid == 51)
     {
         return false;
     }
@@ -204,53 +202,55 @@ bool should_forward_message(mavlink_message_t &msg, std::shared_ptr<mlink> *inco
     return true;
 }
 
-void runMainLoop(std::vector<std::shared_ptr<mlink> > *links, bool &verbose)
+void runMainLoop(std::vector<std::shared_ptr<mlink> > *links, queue<std::pair<mlink*, mavlink_message_t>>* qMavIn, bool &verbose)
 {
-    // Gets run in a while loop once links are setup
-
     // Iterate through each link
-    mavlink_message_t msg;
     for (auto incoming_link = links->begin(); incoming_link != links->end(); ++incoming_link)
     {
         // Clear out dead links
         (*incoming_link)->checkForDeadSysID();
+    }
 
-        // Try to read from the buffer for this link
-        while ((*incoming_link)->qReadIncoming(&msg))
+    // Gets run in a while loop once links are setup
+    std::pair<mlink*, mavlink_message_t> p;
+    if (!qMavIn->pop(&p)) {
+        exitMainLoop = true;
+        return;
+    }
+
+    mlink* const incoming_link = p.first;
+    const mavlink_message_t msg = p.second;
+
+    // Determine the correct target system ID for this message
+    int16_t sysIDmsg = -1;
+    int16_t compIDmsg = -1;
+    getTargets(&msg, sysIDmsg, compIDmsg);
+
+
+    // Iterate through each link to send to the correct target
+    for (auto outgoing_link = links->begin(); outgoing_link != links->end(); ++outgoing_link)
+    {
+        // mavlink routing.  See comment in MAVLink_routing.cpp
+        // for logic
+        if (!should_forward_message(msg, incoming_link, &(*outgoing_link)))
         {
-            // Determine the correct target system ID for this message
-            int16_t sysIDmsg = -1;
-            int16_t compIDmsg = -1;
-            getTargets(&msg, sysIDmsg, compIDmsg);
+            continue;
+        }
 
-
-            // Iterate through each link to send to the correct target
-            for (auto outgoing_link = links->begin(); outgoing_link != links->end(); ++outgoing_link)
-            {
-                // mavlink routing.  See comment in MAVLink_routing.cpp
-                // for logic
-                if (!should_forward_message(msg, &(*incoming_link), &(*outgoing_link)))
-                {
-                    continue;
-                }
-
-                // Provided nothing else has failed and the link is up, add the
-                // message to the outgoing queue.
-                if ((*outgoing_link)->up)
-                {
-                    (*outgoing_link)->qAddOutgoing(msg);
-                }
-                else if (verbose)
-                {
-                    std::cout << "Packet dropped from sysID: " << (int)msg.sysid
-                              << " msgID: " << (int)msg.msgid
-                              << " target system: " << (int)sysIDmsg
-                              << " link name: " << (*incoming_link)->info.link_name << std::endl;
-                }
-            }
+        // Provided nothing else has failed and the link is up, add the
+        // message to the outgoing queue.
+        if ((*outgoing_link)->up)
+        {
+            (*outgoing_link)->qAddOutgoing(msg);
+        }
+        else if (verbose)
+        {
+            std::cout << "Packet dropped from sysID: " << (int)msg.sysid
+                      << " msgID: " << (int)msg.msgid
+                      << " target system: " << (int)sysIDmsg
+                      << " link name: " << incoming_link->info.link_name << std::endl;
         }
     }
-    boost::this_thread::sleep(boost::posix_time::milliseconds(MAIN_LOOP_SLEEP_QUEUE_EMPTY_MS));
 }
 
 void printLinkStats(std::vector<std::shared_ptr<mlink> > *links)

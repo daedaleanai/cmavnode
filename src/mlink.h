@@ -24,13 +24,13 @@
 #include <utility>
 #include <algorithm>
 #include <mutex>
+#include <condition_variable>
 #include <set>
 
 #include "exception.h"
 
 #define MAV_INCOMING_LENGTH 2000
 #define MAV_OUTGOING_LENGTH 2000
-#define OUT_QUEUE_EMPTY_SLEEP 10
 #define MAV_INCOMING_BUFFER_LENGTH 2041
 #define MAV_PACKET_TIMEOUT_MS 10000
 
@@ -54,6 +54,48 @@ struct queue_counter
     }
 };
 
+template<typename T>
+class queue {
+public:
+    queue(size_t max_size): max_size(max_size), shutdown(false) {}
+
+    void shut_down() {
+        std::unique_lock<std::mutex> lock(m);
+        shutdown = true;
+        cv.notify_all();
+    }
+
+    bool try_push(T&& v) {
+        std::unique_lock<std::mutex> lock(m);
+        if (shutdown || q.size() == max_size) {
+            return false;
+        }
+
+        q.push_back(std::move(v));
+        cv.notify_all();
+        return true;
+    }
+
+    bool pop(T* v) {
+        std::unique_lock<std::mutex> lock(m);
+        cv.wait(lock, [this]() { return shutdown || !q.empty(); });
+        if (!q.empty()) {
+            *v = std::move(q.front());
+            q.pop_front();
+            return true;
+        }
+
+        return false;
+    }
+private:
+    const size_t max_size;
+    bool shutdown;
+
+    std::mutex m;
+    std::condition_variable cv;
+    std::deque<T> q;
+};
+
 struct link_info
 {
     std::string link_name;
@@ -68,7 +110,7 @@ struct link_info
 class mlink
 {
 public:
-    mlink(link_info info_);
+    mlink(link_info info_, queue<std::pair<mlink*, mavlink_message_t>>* qMavIn);
     virtual ~mlink() {};
 
     int link_id;
@@ -77,7 +119,6 @@ public:
 
     //Send or read mavlink messages
     void qAddOutgoing(mavlink_message_t msg);
-    bool qReadIncoming(mavlink_message_t *msg);
 
     void printPacketStats();
 
@@ -139,13 +180,11 @@ public:
     std::map<uint8_t, packet_stats> sysID_stats;
 
 protected:
-    boost::lockfree::spsc_queue<mavlink_message_t> qMavIn {MAV_INCOMING_LENGTH};
-    boost::lockfree::spsc_queue<mavlink_message_t> qMavOut {MAV_OUTGOING_LENGTH};
+    queue<std::pair<mlink*, mavlink_message_t>>* qMavIn;
+    queue<mavlink_message_t> qMavOut{MAV_OUTGOING_LENGTH};
 
     boost::thread read_thread;
     boost::thread write_thread;
-
-    bool exitFlag = false;
 
     uint8_t data_in_[MAV_INCOMING_BUFFER_LENGTH];
     uint8_t data_out_[MAV_INCOMING_BUFFER_LENGTH];

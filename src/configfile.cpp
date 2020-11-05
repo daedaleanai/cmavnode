@@ -2,7 +2,7 @@
 
 #include <fstream>
 
-int readConfigFile(std::string &filename, std::vector<std::shared_ptr<mlink> > &links)
+int readConfigFile(std::string &filename, std::vector<std::shared_ptr<mlink> > &links, queue<std::pair<mlink*, mavlink_message_t>>* qMavIn)
 {
     ConfigFile _configFile = ConfigFile(filename);
 
@@ -110,7 +110,7 @@ int readConfigFile(std::string &filename, std::vector<std::shared_ptr<mlink> > &
             links.push_back(std::shared_ptr<mlink>(new serial(serialport
                                                    ,std::to_string(baud)
                                                    ,flowcontrol
-                                                   ,_info)));
+                                                   ,_info,qMavIn)));
         }
         else if (udp_type_ != UDP_TYPE_NONE)
         {
@@ -121,18 +121,18 @@ int readConfigFile(std::string &filename, std::vector<std::shared_ptr<mlink> > &
                     std::shared_ptr<mlink>(new asyncsocket(targetip,
                                            std::to_string(targetport)
                                            ,std::to_string(localport)
-                                           ,_info)));
+                                           ,_info,qMavIn)));
                 break;
             case UDP_TYPE_SERVER:
                 links.push_back(
                     std::shared_ptr<mlink>(new asyncsocket(std::to_string(localport)
-                                           ,_info)));
+                                           ,_info,qMavIn)));
                 break;
             case UDP_TYPE_CLIENT:
                 links.push_back(
                     std::shared_ptr<mlink>(new asyncsocket(targetip,
                                            std::to_string(targetport)
-                                           ,_info)));
+                                           ,_info,qMavIn)));
                 break;
             case UDP_TYPE_BROADCAST:
                 links.push_back(
@@ -140,7 +140,7 @@ int readConfigFile(std::string &filename, std::vector<std::shared_ptr<mlink> > &
                                            bindip,
                                            bcastip,
                                            std::to_string(bcastport)
-                                           ,_info)));
+                                           ,_info,qMavIn)));
                 break;
             }
         }
