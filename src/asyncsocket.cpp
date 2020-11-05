@@ -17,7 +17,7 @@ asyncsocket::asyncsocket(
 {
 
     boost::asio::ip::udp::resolver resolver(io_service_);
-    boost::asio::ip::udp::resolver::query query(boost::asio::ip::udp::v4(), host, hostport);
+    boost::asio::ip::udp::resolver::query query(boost::asio::ip::udp::v4(), host, hostport, boost::asio::ip::resolver_query_base::flags(0));
     boost::asio::ip::udp::resolver::iterator iter = resolver.resolve(query);
     endpoint_ = *iter;
 
