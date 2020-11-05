@@ -327,3 +327,23 @@ void mlink::record_packet_stats(mavlink_message_t *msg)
 
 
 }
+
+uint8_t mlink::mav_parse_char(uint8_t c, mavlink_message_t* r_message, mavlink_status_t* r_mavlink_status) {
+    uint8_t msg_received = mavlink_frame_char_buffer(&parse_state_message, &parse_state_status, c, r_message, r_mavlink_status);
+    if (msg_received == MAVLINK_FRAMING_BAD_CRC ||
+        msg_received == MAVLINK_FRAMING_BAD_SIGNATURE) {
+            // we got a bad CRC. Treat as a parse failure
+            parse_state_status.parse_error++;
+            parse_state_status.msg_received = MAVLINK_FRAMING_INCOMPLETE;
+            parse_state_status.parse_state = MAVLINK_PARSE_STATE_IDLE;
+            if (c == MAVLINK_STX) {
+                parse_state_status.parse_state = MAVLINK_PARSE_STATE_GOT_STX;
+                parse_state_message.len = 0;
+                mavlink_start_checksum(&parse_state_message);
+            }
+
+            return 0;
+    }
+    return msg_received;
+
+}

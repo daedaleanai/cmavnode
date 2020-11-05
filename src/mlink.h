@@ -170,6 +170,14 @@ protected:
     std::map<uint8_t, uint8_t> new_custom_msg_crcs;
 
     static std::set<uint8_t> sysIDs_all_links;
+
+    // Like mavlink_parse_char, but operates on internal instead of global
+    // parse state.
+    uint8_t mav_parse_char(uint8_t c, mavlink_message_t* r_message, mavlink_status_t* r_mavlink_status);
+
+    // Mavlink parse state
+    mavlink_message_t parse_state_message = {};
+    mavlink_status_t parse_state_status = {};
 };
 
 #endif

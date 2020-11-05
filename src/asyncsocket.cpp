@@ -166,7 +166,7 @@ void asyncsocket::handleReceiveFrom(const boost::system::error_code& error,
 
         for (size_t i = 0; i < bytes_recvd; i++)
         {
-            if (mavlink_parse_char(MAVLINK_COMM_0, data_in_[i], &msg, &status))
+            if (mav_parse_char(data_in_[i], &msg, &status))
             {
                 onMessageRecv(&msg);
             }
